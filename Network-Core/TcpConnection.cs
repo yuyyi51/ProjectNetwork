@@ -9,11 +9,11 @@ using System.IO;
 
 namespace Network_Core
 {
-    public class TcpSession
+    public class TcpConnection
     {
-        public delegate void TcpSessionEventHandler(TcpSession sender);
-        public delegate void TcpSessionReceiveDoneHandler(TcpSession sender, byte[] data);
-        public delegate void TcpSessionReceiveObjectDoneHandler(TcpSession sender, object obj);
+        public delegate void TcpConnectionEventHandler(TcpConnection sender);
+        public delegate void TcpConnectionReceiveDoneHandler(TcpConnection sender, byte[] data);
+        public delegate void TcpConnectionReceiveObjectDoneHandler(TcpConnection sender, object obj);
         
         protected TcpClient client;
         protected byte[] buffer;
@@ -25,15 +25,15 @@ namespace Network_Core
         protected bool connected;
         protected Thread receivingThread;
 
-        public event TcpSessionEventHandler ConnectDoneEvent;
-        public event TcpSessionEventHandler ConnectFailedEvent;
-        public event TcpSessionEventHandler LostConnectionEvent;
-        public event TcpSessionEventHandler ConnectionCloseEvent;
-        public event TcpSessionEventHandler SendDoneEvent;
-        public event TcpSessionEventHandler ReceiveHeaderFailEvent;
-        public event TcpSessionReceiveDoneHandler ReceiveDoneEvent;
-        public event TcpSessionReceiveObjectDoneHandler ReceiveObjectDoneEvent;
-        public TcpSession()
+        public event TcpConnectionEventHandler ConnectDoneEvent;
+        public event TcpConnectionEventHandler ConnectFailedEvent;
+        public event TcpConnectionEventHandler LostConnectionEvent;
+        public event TcpConnectionEventHandler ConnectionCloseEvent;
+        public event TcpConnectionEventHandler SendDoneEvent;
+        public event TcpConnectionEventHandler ReceiveHeaderFailEvent;
+        public event TcpConnectionReceiveDoneHandler ReceiveDoneEvent;
+        public event TcpConnectionReceiveObjectDoneHandler ReceiveObjectDoneEvent;
+        public TcpConnection()
         {
             bufferSize = 1024;
             buffer = new byte[bufferSize];
@@ -44,7 +44,7 @@ namespace Network_Core
             remainReceiveLength = 0;
             connected = false;
         }
-        public TcpSession(TcpClient cli)
+        public TcpConnection(TcpClient cli)
         {
             bufferSize = 1024;
             buffer = new byte[bufferSize];
@@ -55,7 +55,7 @@ namespace Network_Core
             remainReceiveLength = 0;
             connected = cli.Connected;
         }
-        public TcpSession(byte[] header)
+        public TcpConnection(byte[] header)
         {
             buffer = new byte[bufferSize];
             packager = new Packager(header);
@@ -65,7 +65,7 @@ namespace Network_Core
             remainReceiveLength = 0;
             connected = false;
         }
-        public TcpSession(TcpClient cli, byte[] header)
+        public TcpConnection(TcpClient cli, byte[] header)
         {
             buffer = new byte[bufferSize];
             packager = new Packager(header);
@@ -74,6 +74,26 @@ namespace Network_Core
             receivedData = null;
             remainReceiveLength = 0;
             connected = cli.Connected;
+        }
+        public TcpConnection(Packager pk)
+        {
+            buffer = new byte[bufferSize];
+            packager = new Packager(pk);
+            receiving = new ManualResetEvent(false);
+            client = new TcpClient();
+            receivedData = null;
+            remainReceiveLength = 0;
+            connected = false;
+        }
+        public TcpConnection(TcpClient cli, Packager pk)
+        {
+            buffer = new byte[bufferSize];
+            packager = new Packager(pk);
+            receiving = new ManualResetEvent(false);
+            client = cli;
+            receivedData = null;
+            remainReceiveLength = 0;
+            connected = false;
         }
         public TcpClient Client
         {
@@ -94,6 +114,19 @@ namespace Network_Core
         public void Connect(string ip, int port)
         {
             client.BeginConnect(ip, port, ConnectCallback, client);
+        }
+        public int BufferSize
+        {
+            get { return bufferSize; }
+            set
+            {
+                if(!connected)
+                {
+                    bufferSize = value;
+                    buffer = new byte[bufferSize];
+                }
+                    
+            }
         }
         protected void ConnectCallback(IAsyncResult ar)
         {
@@ -147,15 +180,14 @@ namespace Network_Core
         }
         public bool StartReceiving()
         {
-            if (receivingThread == null)
+            if (receivingThread != null)
             {
-                receivingThread = new Thread(ReceivingThread);
-                receivingThread.IsBackground = true;
-                receivingThread.Start();
-                return true;
-            }
-            else
                 return false;
+            }
+            receivingThread = new Thread(ReceivingThread);
+            receivingThread.IsBackground = true;
+            receivingThread.Start();
+            return true;
         }
         public void StopReceiving()
         {

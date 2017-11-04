@@ -39,6 +39,10 @@ namespace Network_Core
         {
             packageHeader = header;
         }
+        public Packager(Packager pk)
+        {
+            packageHeader = pk.packageHeader;
+        }
 
         public byte[] Pack(object obj)
         {

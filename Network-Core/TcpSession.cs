@@ -17,12 +17,13 @@ namespace Network_Core
         
         protected TcpClient client;
         protected byte[] buffer;
-        protected int bufferSize = 1024;
+        protected int bufferSize;
         protected byte[] receivedData;
         protected int remainReceiveLength;
         protected Packager packager;
         protected ManualResetEvent receiving;
         protected bool connected;
+        protected Thread receivingThread;
 
         public event TcpSessionEventHandler ConnectDoneEvent;
         public event TcpSessionEventHandler ConnectFailedEvent;
@@ -34,16 +35,18 @@ namespace Network_Core
         public event TcpSessionReceiveObjectDoneHandler ReceiveObjectDoneEvent;
         public TcpSession()
         {
+            bufferSize = 1024;
             buffer = new byte[bufferSize];
             packager = new Packager();
             receiving = new ManualResetEvent(false);
-            client = null;
+            client = new TcpClient();
             receivedData = null;
             remainReceiveLength = 0;
             connected = false;
         }
         public TcpSession(TcpClient cli)
         {
+            bufferSize = 1024;
             buffer = new byte[bufferSize];
             packager = new Packager();
             receiving = new ManualResetEvent(false);
@@ -57,7 +60,7 @@ namespace Network_Core
             buffer = new byte[bufferSize];
             packager = new Packager(header);
             receiving = new ManualResetEvent(false);
-            client = null;
+            client = new TcpClient();
             receivedData = null;
             remainReceiveLength = 0;
             connected = false;
@@ -112,7 +115,14 @@ namespace Network_Core
         {
             byte[] obj = packager.Pack(message);
             NetworkStream ns = client.GetStream();
-            ns.BeginWrite(obj, 0, obj.Length, SendCallback, ns);
+            try
+            {
+                ns.BeginWrite(obj, 0, obj.Length, SendCallback, ns);
+            }
+            catch(IOException e)
+            {
+                throw e;
+            }
         }
         protected void SendCallback(IAsyncResult ar)
         {
@@ -123,12 +133,42 @@ namespace Network_Core
             }
             catch(SocketException se)
             {
-
                 throw se;
             }
             SendDoneEvent?.Invoke(this);
         }
-        public void ReceiveAndWait()
+        public void Close()
+        {
+            receivingThread?.Abort();
+            receiving.Set();
+            connected = false;
+            ConnectionCloseEvent?.Invoke(this);
+            client.Close();
+        }
+        public bool StartReceiving()
+        {
+            if (receivingThread == null)
+            {
+                receivingThread = new Thread(ReceivingThread);
+                receivingThread.IsBackground = true;
+                receivingThread.Start();
+                return true;
+            }
+            else
+                return false;
+        }
+        public void StopReceiving()
+        {
+            receivingThread?.Abort();
+        }
+        private void ReceivingThread()
+        {
+            while(connected)
+            {
+                ReceiveAndWait();
+            }
+        }
+        private void ReceiveAndWait()
         {
             Receive();
             receiving.WaitOne();
@@ -149,7 +189,6 @@ namespace Network_Core
             }
             catch(SocketException se)
             {
-
                 throw se;
             }
             if(receivedNum == 0)
@@ -187,7 +226,6 @@ namespace Network_Core
             }
             catch (SocketException se)
             {
-
                 throw se;
             }
             if (receivedNum == 0)
@@ -219,6 +257,7 @@ namespace Network_Core
                 ReceiveObjectDoneEvent?.Invoke(this, packager.UnPack(receivedData));
                 ReceiveDoneEvent?.Invoke(this,receivedData);
                 receivedData = null;
+                receiving.Set();
             }
         }
         public override string ToString()

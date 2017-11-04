@@ -54,7 +54,7 @@ namespace Network_Core
         {
             if (tem.Length < Length)
                 return false;
-            for(int i = 0; i < tem.Length; ++i)
+            for(int i = 0; i < packageHeader.Length; ++i)
             {
                 if(tem[i] != packageHeader[i])
                 {

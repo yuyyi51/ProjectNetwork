@@ -111,9 +111,18 @@ namespace Network_Core
         {
             get { return receiving; }
         }
-        public void Connect(string ip, int port)
+        public async void Connect(string ip, int port)
         {
-            client.BeginConnect(ip, port, ConnectCallback, client);
+            try
+            {
+                await client.ConnectAsync(ip, port);
+                connected = true;
+                ConnectDoneEvent?.Invoke(this);
+            }
+            catch(SocketException)
+            {
+                ConnectFailedEvent?.Invoke(this);
+            }
         }
         public int BufferSize
         {
@@ -128,7 +137,7 @@ namespace Network_Core
                     
             }
         }
-        protected void ConnectCallback(IAsyncResult ar)
+        /*protected void ConnectCallback(IAsyncResult ar)
         {
             TcpClient t = ar.AsyncState as TcpClient;
             try
@@ -143,19 +152,13 @@ namespace Network_Core
             }
             connected = true;
             ConnectDoneEvent?.Invoke(this);
-        }
-        public void Send(object message)
+        }*/
+        public async void Send(object message)
         {
             byte[] obj = packager.Pack(message);
             NetworkStream ns = client.GetStream();
-            try
-            {
-                ns.BeginWrite(obj, 0, obj.Length, SendCallback, ns);
-            }
-            catch(IOException e)
-            {
-                throw e;
-            }
+            await ns.WriteAsync(obj, 0, obj.Length);
+            SendDoneEvent?.Invoke(this);
         }
         protected void SendCallback(IAsyncResult ar)
         {

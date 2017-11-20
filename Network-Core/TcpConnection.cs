@@ -31,6 +31,8 @@ namespace Network_Core
         public event TcpConnectionEventHandler ConnectionCloseEvent;
         public event TcpConnectionEventHandler SendDoneEvent;
         public event TcpConnectionEventHandler ReceiveHeaderFailEvent;
+        public event TcpConnectionEventHandler ReceivingThreadStartEvent;
+        public event TcpConnectionEventHandler ReceivingThreadStopEvent;
         public event TcpConnectionReceiveDoneHandler ReceiveDoneEvent;
         public event TcpConnectionReceiveObjectDoneHandler ReceiveObjectDoneEvent;
         public TcpConnection()
@@ -187,25 +189,27 @@ namespace Network_Core
             receivingThread = new Thread(ReceivingThread);
             receivingThread.IsBackground = true;
             receivingThread.Start();
+            ReceivingThreadStartEvent?.Invoke(this);
             return true;
         }
         public void StopReceiving()
         {
             receivingThread?.Abort();
+            ReceivingThreadStopEvent?.Invoke(this);
         }
-        private void ReceivingThread()
+        protected void ReceivingThread()
         {
             while(connected)
             {
                 ReceiveAndWait();
             }
         }
-        private void ReceiveAndWait()
+        protected void ReceiveAndWait()
         {
             Receive();
             receiving.WaitOne();
         }
-        public void Receive()
+        protected void Receive()
         {
             NetworkStream netstream = client.GetStream();
             receiving.Reset();

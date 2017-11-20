@@ -6,6 +6,7 @@ using System.Threading;
 using System.Net.Sockets;
 using System.Net;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace Network_Core
 {
@@ -113,9 +114,18 @@ namespace Network_Core
         {
             get { return receiving; }
         }
-        public void Connect(string ip, int port)
+        public async Task Connect(string ip, int port)
         {
-            client.BeginConnect(ip, port, ConnectCallback, client);
+            try
+            {
+                await client.ConnectAsync(ip, port);
+                connected = true;
+                ConnectDoneEvent?.Invoke(this);
+            }
+            catch(SocketException)
+            {
+                ConnectFailedEvent?.Invoke(this);
+            }
         }
         public int BufferSize
         {
@@ -130,46 +140,11 @@ namespace Network_Core
                     
             }
         }
-        protected void ConnectCallback(IAsyncResult ar)
-        {
-            TcpClient t = ar.AsyncState as TcpClient;
-            try
-            {
-                t.EndConnect(ar);
-            }
-            catch(SocketException)
-            {
-                //Fail to connect
-                ConnectFailedEvent?.Invoke(this);
-                return;
-            }
-            connected = true;
-            ConnectDoneEvent?.Invoke(this);
-        }
-        public void Send(object message)
+        public async Task Send(object message)
         {
             byte[] obj = packager.Pack(message);
             NetworkStream ns = client.GetStream();
-            try
-            {
-                ns.BeginWrite(obj, 0, obj.Length, SendCallback, ns);
-            }
-            catch(IOException e)
-            {
-                throw e;
-            }
-        }
-        protected void SendCallback(IAsyncResult ar)
-        {
-            NetworkStream ns = ar.AsyncState as NetworkStream;
-            try
-            {
-                ns.EndWrite(ar);
-            }
-            catch(SocketException se)
-            {
-                throw se;
-            }
+            await ns.WriteAsync(obj, 0, obj.Length);
             SendDoneEvent?.Invoke(this);
         }
         public void Close()
@@ -180,48 +155,30 @@ namespace Network_Core
             ConnectionCloseEvent?.Invoke(this);
             client.Close();
         }
-        public bool StartReceiving()
+        public bool StartReceivingAsync()
         {
-            if (receivingThread != null)
-            {
-                return false;
-            }
-            receivingThread = new Thread(ReceivingThread);
-            receivingThread.IsBackground = true;
-            receivingThread.Start();
-            ReceivingThreadStartEvent?.Invoke(this);
+            ReceivingAsync();
             return true;
+        }
+        protected async void ReceivingAsync()
+        {
+            while(true)
+            {
+                await ReceiveAsync();
+            }
         }
         public void StopReceiving()
         {
-            receivingThread?.Abort();
-            ReceivingThreadStopEvent?.Invoke(this);
+            
         }
-        protected void ReceivingThread()
-        {
-            while(connected)
-            {
-                ReceiveAndWait();
-            }
-        }
-        protected void ReceiveAndWait()
-        {
-            Receive();
-            receiving.WaitOne();
-        }
-        protected void Receive()
+        public async Task ReceiveAsync()
         {
             NetworkStream netstream = client.GetStream();
             receiving.Reset();
-            netstream.BeginRead(buffer, 0, packager.Length + sizeof(int), ReceiveHeader, netstream);
-        }
-        protected void ReceiveHeader(IAsyncResult ar)
-        {
-            NetworkStream netstream = ar.AsyncState as NetworkStream;
             int receivedNum;
             try
             {
-                receivedNum = netstream.EndRead(ar);
+                receivedNum = await netstream.ReadAsync(buffer, 0, packager.Length + sizeof(int));
             }
             catch(SocketException se)
             {
@@ -233,14 +190,14 @@ namespace Network_Core
                 LostConnectionEvent?.Invoke(this);
                 return;
             }
-            if(receivedNum < packager.Length+sizeof(int))
+            if (receivedNum < packager.Length + sizeof(int))
             {
                 ReceiveHeaderFailEvent?.Invoke(this);
                 return;
             }
             byte[] tem = new byte[packager.Length + sizeof(int)];
             Array.Copy(buffer, 0, tem, 0, packager.Length + sizeof(int));
-            if(!packager.Check(tem))
+            if (!packager.Check(tem))
             {
                 ReceiveHeaderFailEvent?.Invoke(this);
                 return;
@@ -250,51 +207,40 @@ namespace Network_Core
             int length = ByteConverter.Byte2Int(len);
             remainReceiveLength = length;
             int readsize = remainReceiveLength < bufferSize ? remainReceiveLength : bufferSize;
-            netstream.BeginRead(buffer, 0, readsize, ReceiveCallback, netstream);
-        }
-        protected void ReceiveCallback(IAsyncResult ar)
-        {
-            NetworkStream netstream = ar.AsyncState as NetworkStream;
-            int receivedNum;
-            try
+            while(remainReceiveLength > 0)
             {
-                receivedNum = netstream.EndRead(ar);
+                try
+                {
+                    receivedNum = await netstream.ReadAsync(buffer, 0, readsize);
+                }
+                catch(SocketException se)
+                {
+                    throw se;
+                }
+                if(receivedNum == 0)
+                {
+                    //Lost connection
+                    LostConnectionEvent?.Invoke(this);
+                    return;
+                }
+                remainReceiveLength -= receivedNum;
+                tem = new byte[receivedNum];
+                Array.Copy(buffer, tem, receivedNum);
+                if (receivedData == null)
+                {
+                    receivedData = new byte[receivedNum];
+                    Array.Copy(tem, 0, receivedData, 0, receivedNum);
+                }
+                else
+                {
+                    receivedData = receivedData.Concat(tem).ToArray();
+                }
+                readsize = remainReceiveLength < bufferSize ? remainReceiveLength : bufferSize;
             }
-            catch (SocketException se)
-            {
-                throw se;
-            }
-            if (receivedNum == 0)
-            {
-                //Lost connection
-                connected = false;
-                LostConnectionEvent?.Invoke(this);
-                return;
-            }
-            remainReceiveLength -= receivedNum;
-            byte[] tem = new byte[receivedNum];
-            Array.Copy(buffer, tem, receivedNum);
-            if (receivedData == null)
-            {
-                receivedData = new byte[receivedNum];
-                Array.Copy(tem, 0, receivedData, 0, receivedNum);
-            }
-            else
-            {
-                receivedData = receivedData.Concat(tem).ToArray();
-            }
-            if(remainReceiveLength > 0)
-            {
-                int readsize = remainReceiveLength < bufferSize ? remainReceiveLength : bufferSize;
-                netstream.BeginRead(buffer, 0, readsize, ReceiveCallback, netstream);
-            }
-            else
-            {
-                ReceiveObjectDoneEvent?.Invoke(this, packager.UnPack(receivedData));
-                ReceiveDoneEvent?.Invoke(this,receivedData);
-                receivedData = null;
-                receiving.Set();
-            }
+            ReceiveObjectDoneEvent?.Invoke(this, packager.UnPack(receivedData));
+            ReceiveDoneEvent?.Invoke(this, receivedData);
+            receivedData = null;
+            receiving.Set();
         }
         public override string ToString()
         {

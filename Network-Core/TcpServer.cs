@@ -13,7 +13,6 @@ namespace Network_Core
     {
         public delegate void AcceptConnectionHandler(TcpConnection tcon);
         protected List<TcpConnection> connectionList;
-        protected Thread listeningThread;
         protected bool listening;
         protected TcpListener listener;
         protected Packager packager;
@@ -33,43 +32,38 @@ namespace Network_Core
             packager = new Packager();
         }
 
-        public bool StartListening()
+        public bool StartListeningAsync()
         {
-            if (listeningThread != null)
+            if (listening == true)
                 return false;
-            listeningThread = new Thread(ListeningThread);
-            listeningThread.IsBackground = true;
-            listeningThread.Start();
+            listening = true;
+            ListeningAsync();
             return true;
         }
-        protected void ListeningThread()
+        protected async void ListeningAsync()
         {
             listener.Start();
             while(listening)
             {
-                if(listener.Pending())
-                {
-                    TcpConnection tc = new TcpConnection(listener.AcceptTcpClient(), packager);
-                    connectionList.Add(tc);
-                    AcceptConnectionEvent?.Invoke(tc);
-                }
+                TcpConnection tc = new TcpConnection(await listener.AcceptTcpClientAsync(), packager);
+                connectionList.Add(tc);
+                AcceptConnectionEvent?.Invoke(tc);
             }
             listener.Stop();
         }
-        public void StopListening()
+        public void StopListeningAsync()
         {
             listening = false;
-            listeningThread = null;
         }
-        public void Send(TcpConnection tc,object obj)
+        public async void Send(TcpConnection tc,object obj)
         {
-            tc.Send(obj);
+            await tc.Send(obj);
         }
         public void Broadcast(object obj)
         {
             foreach(TcpConnection tc in connectionList)
             {
-                tc.Send(obj);
+                Send(tc, obj);
             }
         }
     }

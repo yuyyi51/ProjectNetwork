@@ -25,12 +25,20 @@ namespace ServerTest
         private void ReceivedMessage(TcpConnection connection, object obj)
         {
             string m = obj as string;
-            PrintLine(string.Format("{0} : {1}", connection.ToString(), m));
+            string fm = string.Format("{0} : {1}", connection.ToString(), m);
+            PrintLine(fm);
+            server.Broadcast(fm);
+        }
+        private void LostConnection(TcpConnection connection)
+        {
+            PrintLine(string.Format("{0} 已断开", connection.ToString()));
+            server.RemoveConnection(connection);
         }
         private void AcceptConnection(TcpConnection connection)
         {
             PrintLine(string.Format("{0} 已连接", connection.ToString()));
             connection.ReceiveObjectDoneEvent += ReceivedMessage;
+            connection.LostConnectionEvent += LostConnection;
             connection.StartReceivingAsync();
         }
         private void button2_Click(object sender, EventArgs e)
@@ -41,12 +49,12 @@ namespace ServerTest
             server = new TcpServer(ip, port);
             server.AcceptConnectionEvent += AcceptConnection;
             server.StartListeningAsync();
+            PrintLine("开始监听");
         }
 
         private void button1_Click(object sender, EventArgs e)
         {
-
-            server.Broadcast(textBox1.Text);
+            server.Broadcast(String.Format("{0} : {1}", "server", textBox1.Text));
         }
     }
 }

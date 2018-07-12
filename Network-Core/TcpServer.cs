@@ -55,6 +55,10 @@ namespace Network_Core
         {
             listening = false;
         }
+        public void RemoveConnection(TcpConnection tc)
+        {
+            connectionList.Remove(tc);
+        }
         public async void Send(TcpConnection tc,object obj)
         {
             await tc.Send(obj);

@@ -29,7 +29,7 @@ namespace ClientTest
         private void ReceivedMessage(TcpConnection connection, object obj)
         {
             string m = obj as string;
-            PrintLine(string.Format("{0} : {1}", connection.ToString(), m));
+            PrintLine(m);
         }
         private async void button1_Click(object sender, EventArgs e)
         {
@@ -45,7 +45,14 @@ namespace ClientTest
 
         private async void button2_Click(object sender, EventArgs e)
         {
-            await connection.Send(textBox3.Text);
+            try
+            {
+                await connection.Send(textBox3.Text);
+            }
+            catch (Exception)
+            {
+                PrintLine("发送失败，服务器可能已关闭");
+            }
         }
     }
 }
